@@ -1,7 +1,7 @@
-USE spagnolivalerio2$brisgo;
+USE brisgo;
 
 CREATE TABLE USERS (
-  id            INTEGER PRIMARY KEY,
+  id            INTEGER PRIMARY KEY AUTO_INCREMENT,
   username      VARCHAR(32) NOT NULL UNIQUE,
   name          VARCHAR(32) NOT NULL, 
   lastname      VARCHAR(32) NOT NULL, 
@@ -12,7 +12,7 @@ CREATE TABLE USERS (
 );
 
 CREATE TABLE FRIENDSHIPS   (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTO_INCREMENT,
   user_id     INTEGER NOT NULL,
   friend_id   INTEGER NOT NULL,
   status      ENUM ('pending', 'accepted', 'rejected') DEFAULT 'pending',
@@ -23,7 +23,7 @@ CREATE TABLE FRIENDSHIPS   (
 );
 
 CREATE TABLE MATCHES (
-  id           INTEGER PRIMARY KEY,
+  id           INTEGER PRIMARY KEY AUTO_INCREMENT,
   match_type   ENUM ('1v1', '2v2') NOT NULL,
   mode         ENUM ('online', 'cpu') NOT NULL,      
   status       ENUM  ('finished', 'aborted') NOT NULL,    
@@ -32,7 +32,7 @@ CREATE TABLE MATCHES (
 );
 
 CREATE TABLE MATCH_PLAYERS (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTO_INCREMENT,
   match_id    INTEGER NOT NULL,
   user_id     INTEGER NOT NULL,
   team_index  ENUM ('team1', 'team2'),            
@@ -41,7 +41,7 @@ CREATE TABLE MATCH_PLAYERS (
 );
 
 CREATE TABLE MATCH_INVITE (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTO_INCREMENT,
   room_id     VARCHAR(32) NOT NULL,
   inviter_id  INTEGER NOT NULL,
   invitee_id  INTEGER NOT NULL,
