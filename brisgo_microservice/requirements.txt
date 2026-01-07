@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 gunicorn
 SQLAlchemy
 PyMySQL
+python-dotenv

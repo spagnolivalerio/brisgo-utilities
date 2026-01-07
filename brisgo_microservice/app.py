@@ -1,53 +1,34 @@
 import os
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Enum, CheckConstraint, UniqueConstraint
 
 # --------------------------------------------------
-# App & DB configuration (Cloud SQL only)
+# App & DB configuration (local DBMS)
 # --------------------------------------------------
+
+load_dotenv()
 
 app = Flask(__name__)
 
-DB_USER = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
-DB_NAME = os.environ.get("DB_NAME")
-INSTANCE_CONNECTION_NAME = os.environ.get("INSTANCE_CONNECTION_NAME")
-DB_HOST = os.environ.get("DB_HOST")
-DB_PORT = os.environ.get("DB_PORT", "3306")
+def required_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
 
-missing = [name for name, value in [
-    ("DB_USER", DB_USER),
-    ("DB_PASSWORD", DB_PASSWORD),
-    ("DB_NAME", DB_NAME),
-] if not value]
-if missing:
-    raise RuntimeError(f"Missing required env vars: {', '.join(missing)}")
 
-if INSTANCE_CONNECTION_NAME:
-    socket_path = f"/cloudsql/{INSTANCE_CONNECTION_NAME}"
-    if not os.path.exists(socket_path):
-        raise RuntimeError(
-            "Cloud SQL socket not found at "
-            f"{socket_path}. Configure Cloud Run with the instance, "
-            "or set DB_HOST/DB_PORT for TCP."
-        )
-    db_uri = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@/"
-        f"{DB_NAME}?unix_socket={socket_path}"
-    )
-elif DB_HOST:
-    db_uri = (
-        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    )
-else:
-    raise RuntimeError(
-        "Missing INSTANCE_CONNECTION_NAME and DB_HOST; "
-        "cannot configure database connection."
-    )
-
-app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+DB_USER = "valerio"
+DB_PASSWORD = "root"
+DB_NAME = "brisgo"
+DB_HOST = "localhost"
+DB_PORT = os.getenv("DB_PORT", "3306")
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["DEBUG"] = True
 
 db = SQLAlchemy(app)
 
@@ -59,7 +40,7 @@ class User(db.Model):
     __tablename__ = "USERS"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(32), nullable=False, unique=True)
+    email = db.Column(db.String(32), nullable=False, unique=True)
     name = db.Column(db.String(32), nullable=False)
     lastname = db.Column(db.String(32), nullable=False)
     password = db.Column(db.String(256), nullable=False)
@@ -193,7 +174,7 @@ def handle_error(err):
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "OK"})
 
 
 @app.post("/init")
@@ -208,10 +189,10 @@ def init_db():
 @app.post("/users")
 def create_user():
     payload = parse_json(
-        ["username", "name", "lastname", "password", "nickname", "friend_code"]
+        ["email", "name", "lastname", "password", "nickname", "friend_code"]
     )
     user = User(
-        username=payload["username"],
+        email=payload["email"],
         name=payload["name"],
         lastname=payload["lastname"],
         password=payload["password"],
@@ -227,8 +208,8 @@ def create_user():
 @app.get("/users")
 def list_users():
     query = User.query
-    if "username" in request.args:
-        query = query.filter_by(username=request.args["username"])
+    if "email" in request.args:
+        query = query.filter_by(email=request.args["email"])
     if "friend_code" in request.args:
         query = query.filter_by(friend_code=request.args["friend_code"])
     if "nickname" in request.args:
@@ -406,4 +387,4 @@ def delete_match_invite(invite_id):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(host="0.0.0.0", port=8080, debug=True)
