@@ -9,15 +9,44 @@ from sqlalchemy import Enum, CheckConstraint, UniqueConstraint
 
 app = Flask(__name__)
 
-DB_USER = os.environ["DB_USER"]
-DB_PASSWORD = os.environ["DB_PASSWORD"]
-DB_NAME = os.environ["DB_NAME"]
-INSTANCE_CONNECTION_NAME = os.environ["INSTANCE_CONNECTION_NAME"]
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_NAME = os.environ.get("DB_NAME")
+INSTANCE_CONNECTION_NAME = os.environ.get("INSTANCE_CONNECTION_NAME")
+DB_HOST = os.environ.get("DB_HOST")
+DB_PORT = os.environ.get("DB_PORT", "3306")
 
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@/"
-    f"{DB_NAME}?unix_socket=/cloudsql/{INSTANCE_CONNECTION_NAME}"
-)
+missing = [name for name, value in [
+    ("DB_USER", DB_USER),
+    ("DB_PASSWORD", DB_PASSWORD),
+    ("DB_NAME", DB_NAME),
+] if not value]
+if missing:
+    raise RuntimeError(f"Missing required env vars: {', '.join(missing)}")
+
+if INSTANCE_CONNECTION_NAME:
+    socket_path = f"/cloudsql/{INSTANCE_CONNECTION_NAME}"
+    if not os.path.exists(socket_path):
+        raise RuntimeError(
+            "Cloud SQL socket not found at "
+            f"{socket_path}. Configure Cloud Run with the instance, "
+            "or set DB_HOST/DB_PORT for TCP."
+        )
+    db_uri = (
+        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@/"
+        f"{DB_NAME}?unix_socket={socket_path}"
+    )
+elif DB_HOST:
+    db_uri = (
+        f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
+else:
+    raise RuntimeError(
+        "Missing INSTANCE_CONNECTION_NAME and DB_HOST; "
+        "cannot configure database connection."
+    )
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -27,7 +56,7 @@ db = SQLAlchemy(app)
 # --------------------------------------------------
 
 class User(db.Model):
-    __tablename__ = "users"
+    __tablename__ = "USERS"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(32), nullable=False, unique=True)
@@ -51,7 +80,7 @@ class User(db.Model):
 
 
 class Friendship(db.Model):
-    __tablename__ = "friendships"
+    __tablename__ = "FRIENDSHIPS"
     __table_args__ = (
         CheckConstraint("user_id <> friend_id", name="ck_friendships_user_friend"),
         UniqueConstraint("user_id", "friend_id", name="uq_friendships_pair"),
@@ -76,7 +105,7 @@ class Friendship(db.Model):
 
 
 class Match(db.Model):
-    __tablename__ = "matches"
+    __tablename__ = "MATCHES"
 
     id = db.Column(db.Integer, primary_key=True)
     match_type = db.Column(Enum("1v1", "2v2", name="match_type"), nullable=False)
@@ -97,7 +126,7 @@ class Match(db.Model):
 
 
 class MatchPlayer(db.Model):
-    __tablename__ = "match_players"
+    __tablename__ = "MATCH_PLAYERS"
 
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey("matches.id"), nullable=False)
@@ -114,7 +143,7 @@ class MatchPlayer(db.Model):
 
 
 class MatchInvite(db.Model):
-    __tablename__ = "match_invite"
+    __tablename__ = "MATCH_INVITE"
     __table_args__ = (
         CheckConstraint("inviter_id <> invitee_id", name="ck_invite_users"),
     )
