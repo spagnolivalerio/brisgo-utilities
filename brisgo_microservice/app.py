@@ -15,7 +15,7 @@ DB_NAME = os.environ["DB_NAME"]
 INSTANCE_CONNECTION_NAME = os.environ["INSTANCE_CONNECTION_NAME"]
 
 app.config["SQLALCHEMY_DATABASE_URI"] = (
-    f"mysql+mysqldb://{DB_USER}:{DB_PASSWORD}@/"
+    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@/"
     f"{DB_NAME}?unix_socket=/cloudsql/{INSTANCE_CONNECTION_NAME}"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
