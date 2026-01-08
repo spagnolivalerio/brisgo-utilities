@@ -23,35 +23,48 @@ STATE_DIM = 26
 NUM_ACTIONS = 3
 
 BUCKET_NAME = "brisgo_agent_bucket"        
-BLOB_NAME = "dqn_briscola.pth"              
-LOCAL_MODEL_PATH = "/tmp/dqn_briscola.pth"  
+MODEL_FILES = {
+    "medium": ("dqn_briscola.pth", "/tmp/dqn_briscola.pth"),
+    "hard": ("dqn_briscola_hard.pth", "/tmp/dqn_briscola_hard.pth"),
+}
 
-def download_weights():
-    if os.path.exists(LOCAL_MODEL_PATH):
+def download_weights(blob_name, local_path):
+    if os.path.exists(local_path):
         return  
 
     client = storage.Client()
     bucket = client.bucket(BUCKET_NAME)
-    blob = bucket.blob(BLOB_NAME)
-    blob.download_to_filename(LOCAL_MODEL_PATH)
+    blob = bucket.blob(blob_name)
+    blob.download_to_filename(local_path)
 
-def load_model():
-    download_weights()
+def load_model(blob_name, local_path):
+    download_weights(blob_name, local_path)
     model = DQN(state_dim=STATE_DIM, num_actions=NUM_ACTIONS)
-    state_dict = torch.load(LOCAL_MODEL_PATH, map_location="cpu")
+    state_dict = torch.load(local_path, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()
     return model
 
 app = Flask(__name__)
+MODEL_CACHE = {}
 
-model = load_model()
+def get_model(difficulty):
+    if difficulty not in MODEL_FILES:
+        return None
+    if difficulty not in MODEL_CACHE:
+        blob_name, local_path = MODEL_FILES[difficulty]
+        MODEL_CACHE[difficulty] = load_model(blob_name, local_path)
+    return MODEL_CACHE[difficulty]
 
 @app.route("/act", methods=["POST"])
 def act():
     payload = request.get_json(silent=True)
-    if not payload or "state" not in payload:
-        return jsonify({"error": "Missing 'state' in JSON body"}), 400
+    if not payload or "state" not in payload or "difficulty" not in payload:
+        return jsonify({"error": "Missing 'state' or 'difficulty' in JSON body"}), 400
+
+    difficulty = payload["difficulty"]
+    if difficulty not in MODEL_FILES:
+        return jsonify({"error": "'difficulty' must be 'medium' or 'hard'"}), 400
 
     state = payload["state"]
     if not isinstance(state, list) or len(state) != STATE_DIM:
@@ -62,6 +75,7 @@ def act():
     except (TypeError, ValueError):
         return jsonify({"error": "'state' must be a list of numbers"}), 400
 
+    model = get_model(difficulty)
     with torch.no_grad():
         q_values = model(state_t)
         action = int(torch.argmax(q_values, dim=1).item())

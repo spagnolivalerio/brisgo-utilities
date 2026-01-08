@@ -1,14 +1,13 @@
+DROP DATABASE IF EXISTS brisgo;
+CREATE DATABASE brisgo;
 USE brisgo;
 
 CREATE TABLE USERS (
   id            INTEGER PRIMARY KEY AUTO_INCREMENT,
-  email         VARCHAR(32) NOT NULL UNIQUE,
-  name          VARCHAR(32) NOT NULL, 
-  lastname      VARCHAR(32) NOT NULL, 
-  password      VARCHAR(256) NOT NULL,
-  nickname      VARCHAR(64) NOT NULL,
-  firebase_code VARCHAR(50) DEFAULT NULL,
-  friend_code   VARCHAR(16) NOT NULL UNIQUE
+  nickname      VARCHAR(64) DEFAULT NULL,
+  firebase_code VARCHAR(50) DEFAULT NULL UNIQUE,
+  friend_code   VARCHAR(16) NOT NULL UNIQUE, 
+  photo         LONGBLOB DEFAULT NULL
 );
 
 CREATE TABLE FRIENDSHIPS (

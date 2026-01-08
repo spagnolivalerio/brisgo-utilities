@@ -1,8 +1,12 @@
+import base64
 import os
+import secrets
+import string
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Enum, CheckConstraint, UniqueConstraint
+from sqlalchemy.dialects.mysql import LONGBLOB
 
 # --------------------------------------------------
 # App & DB configuration (local DBMS)
@@ -40,20 +44,14 @@ class User(db.Model):
     __tablename__ = "USERS"
 
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(32), nullable=False, unique=True)
-    name = db.Column(db.String(32), nullable=False)
-    lastname = db.Column(db.String(32), nullable=False)
-    password = db.Column(db.String(256), nullable=False)
-    nickname = db.Column(db.String(64), nullable=False)
-    firebase_code = db.Column(db.String(50))
+    nickname = db.Column(db.String(64))
+    firebase_code = db.Column(db.String(50), unique=True)
     friend_code = db.Column(db.String(16), nullable=False, unique=True)
+    photo = db.Column(LONGBLOB)
 
     def to_dict(self):
         return {
             "id": self.id,
-            "username": self.username,
-            "name": self.name,
-            "lastname": self.lastname,
             "nickname": self.nickname,
             "firebase_code": self.firebase_code,
             "friend_code": self.friend_code,
@@ -68,8 +66,8 @@ class Friendship(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    friend_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
+    friend_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     status = db.Column(
         Enum("pending", "accepted", "rejected", name="friendship_status"),
         nullable=False,
@@ -111,7 +109,7 @@ class MatchPlayer(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey("matches.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     team_index = db.Column(Enum("team1", "team2", name="team_index"))
 
     def to_dict(self):
@@ -131,8 +129,8 @@ class MatchInvite(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     room_id = db.Column(db.String(32), nullable=False)
-    inviter_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    invitee_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    inviter_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
+    invitee_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     status = db.Column(
         Enum("pending", "accept", "rejected", name="invite_status"),
         nullable=False,
@@ -163,6 +161,18 @@ def parse_json(required_fields=None):
     return payload
 
 
+def generate_friend_code(length=16):
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        code = "".join(secrets.choice(alphabet) for _ in range(length))
+        if not User.query.filter_by(friend_code=code).first():
+            return code
+
+
+def get_user_by_firebase(firebase_code):
+    return User.query.filter_by(firebase_code=firebase_code).first()
+
+
 @app.errorhandler(400)
 @app.errorhandler(404)
 def handle_error(err):
@@ -172,44 +182,35 @@ def handle_error(err):
 # Health & init
 # --------------------------------------------------
 
-@app.get("/health")
+@app.get("/")
 def health():
-    return jsonify({"status": "OK"})
-
-
-@app.post("/init")
-def init_db():
-    db.create_all()
-    return jsonify({"status": "initialized"})
+    return jsonify({"status": "ok"})
 
 # --------------------------------------------------
 # Users
 # --------------------------------------------------
 
-@app.post("/users")
-def create_user():
-    payload = parse_json(
-        ["email", "name", "lastname", "password", "nickname", "friend_code"]
-    )
+@app.post("/login")
+def login_user():
+    payload = parse_json(["firebase_code"])
+    firebase_code = payload["firebase_code"]
+    user = User.query.filter_by(firebase_code=firebase_code).first()
+    if user:
+        return jsonify({"firebase_code": firebase_code, "created": False})
     user = User(
-        email=payload["email"],
-        name=payload["name"],
-        lastname=payload["lastname"],
-        password=payload["password"],
-        nickname=payload["nickname"],
-        firebase_code=payload.get("firebase_code"),
-        friend_code=payload["friend_code"],
+        firebase_code=firebase_code,
+        friend_code=generate_friend_code(),
     )
     db.session.add(user)
     db.session.commit()
-    return jsonify(user.to_dict()), 201
+    return jsonify({"firebase_code": firebase_code, "created": True}), 201
 
 
 @app.get("/users")
 def list_users():
     query = User.query
-    if "email" in request.args:
-        query = query.filter_by(email=request.args["email"])
+    if "firebase_code" in request.args:
+        query = query.filter_by(firebase_code=request.args["firebase_code"])
     if "friend_code" in request.args:
         query = query.filter_by(friend_code=request.args["friend_code"])
     if "nickname" in request.args:
@@ -217,74 +218,134 @@ def list_users():
     return jsonify([u.to_dict() for u in query.all()])
 
 
-@app.get("/users/<int:user_id>")
-def get_user(user_id):
-    return jsonify(User.query.get_or_404(user_id).to_dict())
+@app.post("/users/id_user")
+def get_user():
+    payload = parse_json(["firebase_code"])
+    user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
+    if not user:
+        return jsonify({})
+    photo_base64 = None
+    if user.photo is not None:
+        photo_base64 = base64.b64encode(user.photo).decode("ascii")
+    return jsonify(
+        {
+            "id": user.id,
+            "nickname": user.nickname,
+            "firebase_code": user.firebase_code,
+            "friend_code": user.friend_code,
+            "photo_base64": photo_base64,
+        }
+    )
 
 
-@app.patch("/users/<int:user_id>")
-def update_user(user_id):
-    user = User.query.get_or_404(user_id)
-    payload = parse_json()
-    for field in payload:
-        if hasattr(user, field):
-            setattr(user, field, payload[field])
+@app.post("/users/photo")
+def update_user_photo():
+    payload = parse_json(["firebase_code", "photo_base64"])
+    firebase_code = payload["firebase_code"]
+    try:
+        photo_bytes = base64.b64decode(payload["photo_base64"], validate=True)
+    except (ValueError, TypeError):
+        abort(400, description="Invalid base64 in photo_base64")
+    user = User.query.filter_by(firebase_code=firebase_code).first()
+    if not user:
+        abort(404, description="User not found")
+    user.photo = photo_bytes
     db.session.commit()
-    return jsonify(user.to_dict())
+    return jsonify({"id": user.id, "updated": "photo"}), 200
 
 
-@app.delete("/users/<int:user_id>")
-def delete_user(user_id):
-    user = User.query.get_or_404(user_id)
-    db.session.delete(user)
+@app.post("/users/nickname")
+def update_user_nickname():
+    payload = parse_json(["firebase_code", "nickname"])
+    firebase_code = payload["firebase_code"]
+    user = User.query.filter_by(firebase_code=firebase_code).first()
+    if not user:
+        abort(404, description="User not found")
+    user.nickname = payload["nickname"]
     db.session.commit()
-    return "", 204
+    return jsonify({"id": user.id, "updated": "nickname"}), 200
 
 # --------------------------------------------------
 # Friendships
 # --------------------------------------------------
 
-@app.post("/friendships")
-def create_friendship():
-    payload = parse_json(["user_id", "friend_id"])
+@app.post("/friendships/request")
+def request_friendship():
+    payload = parse_json(["requester_firebase_code", "addressee_firebase_code"])
+    requester = get_user_by_firebase(payload["requester_firebase_code"])
+    addressee = get_user_by_firebase(payload["addressee_firebase_code"])
+    if not requester or not addressee:
+        abort(404, description="User not found")
+    if requester.id == addressee.id:
+        abort(400, description="Cannot request friendship with yourself")
+    existing = Friendship.query.filter_by(
+        user_id=requester.id, friend_id=addressee.id
+    ).first()
+    if existing:
+        return jsonify(existing.to_dict()), 200
     friendship = Friendship(
-        user_id=payload["user_id"],
-        friend_id=payload["friend_id"],
-        status=payload.get("status", "pending"),
+        user_id=requester.id,
+        friend_id=addressee.id,
+        status="pending",
+    )
+    reverse = Friendship(
+        user_id=addressee.id,
+        friend_id=requester.id,
+        status="pending",
     )
     db.session.add(friendship)
+    db.session.add(reverse)
     db.session.commit()
     return jsonify(friendship.to_dict()), 201
 
 
-@app.get("/friendships")
-def list_friendships():
-    query = Friendship.query
-    if "user_id" in request.args:
-        uid = int(request.args["user_id"])
-        query = query.filter(
-            (Friendship.user_id == uid) | (Friendship.friend_id == uid)
+@app.get("/friendships/<firebase_code>")
+def list_friendships(firebase_code):
+    user = get_user_by_firebase(firebase_code)
+    if not user:
+        return jsonify([])
+    friendships = Friendship.query.filter_by(
+        user_id=user.id, status="accepted"
+    ).all()
+    friend_ids = [f.friend_id for f in friendships]
+    if not friend_ids:
+        return jsonify([])
+    friends = User.query.filter(User.id.in_(friend_ids)).all()
+    return jsonify([u.to_dict() for u in friends])
+
+
+@app.put("/friendships/status")
+def update_friendship_status():
+    payload = parse_json(
+        ["requester_firebase_code", "addressee_firebase_code", "status"]
+    )
+    requester = get_user_by_firebase(payload["requester_firebase_code"])
+    addressee = get_user_by_firebase(payload["addressee_firebase_code"])
+    if not requester or not addressee:
+        abort(404, description="User not found")
+    friendship = Friendship.query.filter_by(
+        user_id=requester.id, friend_id=addressee.id
+    ).first()
+    if not friendship:
+        return jsonify({}), 200
+    new_status = payload["status"]
+    if new_status not in {"pending", "accepted", "rejected"}:
+        abort(400, description="Invalid status")
+    friendship.status = new_status
+    reverse = Friendship.query.filter_by(
+        user_id=addressee.id, friend_id=requester.id
+    ).first()
+    if reverse:
+        reverse.status = new_status
+    else:
+        reverse = Friendship(
+            user_id=addressee.id,
+            friend_id=requester.id,
+            status=new_status,
         )
-    if "status" in request.args:
-        query = query.filter_by(status=request.args["status"])
-    return jsonify([f.to_dict() for f in query.all()])
-
-
-@app.patch("/friendships/<int:friendship_id>")
-def update_friendship(friendship_id):
-    friendship = Friendship.query.get_or_404(friendship_id)
-    payload = parse_json(["status"])
-    friendship.status = payload["status"]
+        db.session.add(reverse)
     db.session.commit()
     return jsonify(friendship.to_dict())
-
-
-@app.delete("/friendships/<int:friendship_id>")
-def delete_friendship(friendship_id):
-    friendship = Friendship.query.get_or_404(friendship_id)
-    db.session.delete(friendship)
-    db.session.commit()
-    return "", 204
 
 # --------------------------------------------------
 # Matches
