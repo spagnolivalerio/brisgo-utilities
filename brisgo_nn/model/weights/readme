@@ -1,0 +1,3 @@
+name                  wr random        wr rule based
+random_agent_100k     90%              39%
+rule_based_500k_v2    81%              65%

@@ -50,7 +50,7 @@ def evaluate(model, opponent, episodes, device):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="dqn_briscola.pth")
+    parser.add_argument("--model", default="weights/dqn_briscola.pth")
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
