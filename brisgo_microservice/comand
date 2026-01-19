@@ -1,4 +1,4 @@
-docker run -p 8080:8080 \
+docker run -p 8080:8080 -d\
   --network host \
   -v $(pwd):/app \
   brisgo_ms

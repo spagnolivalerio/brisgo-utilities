@@ -48,6 +48,7 @@ class User(db.Model):
     firebase_code = db.Column(db.String(50), unique=True)
     friend_code = db.Column(db.String(16), nullable=False, unique=True)
     photo = db.Column(LONGBLOB)
+    cups = db.Column(db.Integer, nullable=False, server_default="0")
 
     def to_dict(self):
         return {
@@ -55,6 +56,7 @@ class User(db.Model):
             "nickname": self.nickname,
             "firebase_code": self.firebase_code,
             "friend_code": self.friend_code,
+            "cups": self.cups
         }
 
 
@@ -128,7 +130,7 @@ class MatchInvite(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    room_id = db.Column(db.String(32), nullable=False)
+    room_id = db.Column(db.String(100), nullable=False)
     inviter_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     invitee_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     status = db.Column(
@@ -161,10 +163,22 @@ def parse_json(required_fields=None):
     return payload
 
 
-def generate_friend_code(length=16):
-    alphabet = string.ascii_letters + string.digits
+def generate_friend_code():
+    letters = string.ascii_uppercase
+    digits = string.digits
     while True:
-        code = "".join(secrets.choice(alphabet) for _ in range(length))
+        code = "".join(
+            [
+                secrets.choice(letters),
+                secrets.choice(letters),
+                secrets.choice(digits),
+                secrets.choice(digits),
+                secrets.choice(digits),
+                secrets.choice(digits),
+                secrets.choice(letters),
+                secrets.choice(letters),
+            ]
+        )
         if not User.query.filter_by(friend_code=code).first():
             return code
 
@@ -178,9 +192,7 @@ def get_user_by_firebase(firebase_code):
 def handle_error(err):
     return jsonify({"error": str(err)}), err.code
 
-# --------------------------------------------------
 # Health & init
-# --------------------------------------------------
 
 @app.get("/")
 def health():
@@ -192,33 +204,28 @@ def health():
 
 @app.post("/login")
 def login_user():
-    payload = parse_json(["firebase_code"])
+    payload = parse_json(["firebase_code", "nickname"])
     firebase_code = payload["firebase_code"]
+    nickname = payload["nickname"]
     user = User.query.filter_by(firebase_code=firebase_code).first()
     if user:
-        return jsonify({"firebase_code": firebase_code, "created": False})
+        if user.nickname != nickname:
+            user.nickname = nickname
+            db.session.commit()
+        return jsonify(
+            {"firebase_code": firebase_code, "nickname": user.nickname, "created": False}
+        )
     user = User(
         firebase_code=firebase_code,
+        nickname=nickname,
         friend_code=generate_friend_code(),
     )
     db.session.add(user)
     db.session.commit()
-    return jsonify({"firebase_code": firebase_code, "created": True}), 201
+    return jsonify({"firebase_code": firebase_code, "nickname": nickname, "created": True}), 201
 
 
-@app.get("/users")
-def list_users():
-    query = User.query
-    if "firebase_code" in request.args:
-        query = query.filter_by(firebase_code=request.args["firebase_code"])
-    if "friend_code" in request.args:
-        query = query.filter_by(friend_code=request.args["friend_code"])
-    if "nickname" in request.args:
-        query = query.filter_by(nickname=request.args["nickname"])
-    return jsonify([u.to_dict() for u in query.all()])
-
-
-@app.post("/users/id_user")
+@app.post("/users")
 def get_user():
     payload = parse_json(["firebase_code"])
     user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
@@ -234,6 +241,7 @@ def get_user():
             "firebase_code": user.firebase_code,
             "friend_code": user.friend_code,
             "photo_base64": photo_base64,
+            "cups": user.cups
         }
     )
 
@@ -251,7 +259,7 @@ def update_user_photo():
         abort(404, description="User not found")
     user.photo = photo_bytes
     db.session.commit()
-    return jsonify({"id": user.id, "updated": "photo"}), 200
+    return jsonify({"firebase_code": user.firebase_code, "updated": True}), 200
 
 
 @app.post("/users/nickname")
@@ -263,7 +271,7 @@ def update_user_nickname():
         abort(404, description="User not found")
     user.nickname = payload["nickname"]
     db.session.commit()
-    return jsonify({"id": user.id, "updated": "nickname"}), 200
+    return jsonify({"firebase_code": user.firebase_code, "updated": user.nickname}), 200
 
 # --------------------------------------------------
 # Friendships
@@ -311,7 +319,7 @@ def list_friendships(firebase_code):
     if not friend_ids:
         return jsonify([])
     friends = User.query.filter(User.id.in_(friend_ids)).all()
-    return jsonify([u.to_dict() for u in friends])
+    return jsonify({"friends": [u.to_dict() for u in friends]})
 
 
 @app.put("/friendships/status")
