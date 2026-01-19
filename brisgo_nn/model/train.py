@@ -9,6 +9,8 @@ import torch.optim as optim
 from env.env import BriscolaEnv
 from agents.opponent import RandomOpponent
 from agents.rule_based_agent_v1 import RuleBasedOpponent
+from agents.rule_based_agent_v2 import RuleBasedOpponentV2
+from agents.rule_based_agent_v3 import RuleBasedOpponentV3
 
 AGENT = "rule_based"
 
@@ -81,9 +83,15 @@ class DQNTrainer:
         return loss.item()
 
     def train(self, episodes=100000):
+
         rewards_history = []
 
         for ep in range(episodes):
+            
+            opponent_name = str(random.randint(1, 3))
+            opponent = get_opponent(opponent_name)
+            self.env.opponent = opponent
+            
             state, _ = self.env.reset()
             done = False
             ep_reward = 0
@@ -110,21 +118,25 @@ class DQNTrainer:
 
 def get_opponent(name: str):
     name = name.lower().strip()
-    if name in {"rule", "rule_based", "rulebased"}:
+    if name in {"1"}:
         return RuleBasedOpponent()
-    if name in {"random", "rnd"}:
-        return RandomOpponent()
-    raise ValueError(f"Unknown opponent: {name}")
+    if name in {"2"}:
+        return RuleBasedOpponentV2()
+    if name in {"3"}:
+        return RuleBasedOpponentV3()
+    return RandomOpponent()
 
-def make_env(opponent_name: str):
-    opponent = get_opponent(opponent_name)
-    return BriscolaEnv(opponent=opponent)
+def make_env(opponent_name: str = None):
+    if opponent_name:
+        opponent = get_opponent(opponent_name)
+        return BriscolaEnv(opponent=opponent)
+    return BriscolaEnv()
 
 if __name__ == "__main__":
 
-    env = make_env(AGENT)
+    env = make_env()
     trainer = DQNTrainer(env)
 
     trainer.train(episodes=500000)
 
-    torch.save(trainer.q_net.state_dict(), "dqn_briscola.pth")
+    torch.save(trainer.q_net.state_dict(), "dqn_briscola_opponents_pool.pth")

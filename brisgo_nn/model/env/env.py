@@ -2,6 +2,13 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import random
+import os
+import sys
+
+CURRENT_DIR = os.path.dirname(__file__)
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
 
 from env.cards import Deck, Card, compare_cards
 from agents.opponent import RandomOpponent
@@ -35,6 +42,10 @@ class BriscolaEnv(gym.Env):
         self.opponent_points = 0
         self.step_count = 0
     
+    def change_opponent(self, opponent):
+
+        self.opponent = opponent if opponent is not None else RandomOpponent()
+        
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
@@ -193,3 +204,4 @@ class BriscolaEnv(gym.Env):
         print(f"Agent hand: {self.agent_hand}")
         print(f"Opponent hand: {len(self.opponent_hand)} cards")
         print(f"Points: agent={self.agent_points}, opp={self.opponent_points}")
+    

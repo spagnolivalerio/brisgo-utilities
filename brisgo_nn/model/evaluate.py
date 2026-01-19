@@ -6,6 +6,8 @@ from model import DQN
 from env.env import BriscolaEnv
 from agents.opponent import RandomOpponent
 from agents.rule_based_agent_v1 import RuleBasedOpponent
+from agents.rule_based_agent_v2 import RuleBasedOpponentV2
+from agents.rule_based_agent_v3 import RuleBasedOpponentV3
 
 
 def select_action(model, state, env, device):
@@ -50,7 +52,7 @@ def evaluate(model, opponent, episodes, device):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="weights/dqn_briscola.pth")
+    parser.add_argument("--model", default="weights/dqn_briscola_opponents_pool.pth")
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
@@ -66,6 +68,8 @@ def main():
     scenarios = [
         ("random", RandomOpponent()),
         ("rule_based", RuleBasedOpponent()),
+        ("rule_based_v2", RuleBasedOpponentV2()),
+        ("rule_based_v3", RuleBasedOpponentV3()),
     ]
 
     for name, opp in scenarios:

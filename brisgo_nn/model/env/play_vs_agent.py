@@ -1,7 +1,14 @@
 import argparse
+import os
 import random
+import sys
 
 import torch
+
+CURRENT_DIR = os.path.dirname(__file__)
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
 
 from model import DQN
 from env.cards import Deck, compare_cards
@@ -72,7 +79,7 @@ def prompt_human_action(hand, table_card, briscola_suit):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="dqn_briscola.pth")
+    parser.add_argument("--model", default="../weights/dqn_briscola_opponents_pool.pth")
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
 
