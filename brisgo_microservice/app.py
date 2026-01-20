@@ -5,7 +5,7 @@ import string
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Enum, CheckConstraint, UniqueConstraint
+from sqlalchemy import Enum, CheckConstraint, UniqueConstraint, or_
 from sqlalchemy.dialects.mysql import LONGBLOB
 
 # --------------------------------------------------
@@ -47,15 +47,21 @@ class User(db.Model):
     nickname = db.Column(db.String(64))
     firebase_code = db.Column(db.String(50), unique=True)
     friend_code = db.Column(db.String(16), nullable=False, unique=True)
+    google_photo_url = db.Column(db.String(100))
     photo = db.Column(LONGBLOB)
     cups = db.Column(db.Integer, nullable=False, server_default="0")
 
     def to_dict(self):
+        photo_base64 = None
+        if self.photo is not None:
+            photo_base64 = base64.b64encode(self.photo).decode("ascii")
         return {
             "id": self.id,
+            "photo": photo_base64,
             "nickname": self.nickname,
             "firebase_code": self.firebase_code,
             "friend_code": self.friend_code,
+            "google_photo_url": self.google_photo_url,
             "cups": self.cups
         }
 
@@ -89,37 +95,22 @@ class Match(db.Model):
     __tablename__ = "MATCHES"
 
     id = db.Column(db.Integer, primary_key=True)
-    match_type = db.Column(Enum("1v1", "2v2", name="match_type"), nullable=False)
     mode = db.Column(Enum("online", "cpu", name="match_mode"), nullable=False)
     status = db.Column(Enum("finished", "aborted", name="match_status"), nullable=False)
-    team1_points = db.Column(db.SmallInteger, nullable=False, server_default="0")
-    team2_points = db.Column(db.SmallInteger, nullable=False, server_default="0")
+    host_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
+    joiner_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
+    host_points = db.Column(db.SmallInteger, nullable=False, server_default="0")
+    joiner_points = db.Column(db.SmallInteger, nullable=False, server_default="0")
 
     def to_dict(self):
         return {
             "id": self.id,
-            "match_type": self.match_type,
             "mode": self.mode,
             "status": self.status,
-            "team1_points": self.team1_points,
-            "team2_points": self.team2_points,
-        }
-
-
-class MatchPlayer(db.Model):
-    __tablename__ = "MATCH_PLAYERS"
-
-    id = db.Column(db.Integer, primary_key=True)
-    match_id = db.Column(db.Integer, db.ForeignKey("matches.id"), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
-    team_index = db.Column(Enum("team1", "team2", name="team_index"))
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "match_id": self.match_id,
-            "user_id": self.user_id,
-            "team_index": self.team_index,
+            "host_id": self.host_id,
+            "joiner_id": self.joiner_id,
+            "host_points": self.host_points,
+            "joiner_points": self.joiner_points,
         }
 
 
@@ -207,11 +198,14 @@ def login_user():
     payload = parse_json(["firebase_code", "nickname"])
     firebase_code = payload["firebase_code"]
     nickname = payload["nickname"]
+    google_photo_url = payload.get("google_photo_url")
     user = User.query.filter_by(firebase_code=firebase_code).first()
     if user:
         if user.nickname != nickname:
             user.nickname = nickname
-            db.session.commit()
+        if google_photo_url and user.google_photo_url != google_photo_url:
+            user.google_photo_url = google_photo_url
+        db.session.commit()
         return jsonify(
             {"firebase_code": firebase_code, "nickname": user.nickname, "created": False}
         )
@@ -219,6 +213,7 @@ def login_user():
         firebase_code=firebase_code,
         nickname=nickname,
         friend_code=generate_friend_code(),
+        google_photo_url=google_photo_url,
     )
     db.session.add(user)
     db.session.commit()
@@ -273,15 +268,81 @@ def update_user_nickname():
     db.session.commit()
     return jsonify({"firebase_code": user.firebase_code, "updated": user.nickname}), 200
 
+
+@app.post("/users/stats")
+def get_user_stats():
+    payload = parse_json(["firebase_code"])
+    user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
+    if not user:
+        abort(404, description="User not found")
+
+    def build_stats(mode):
+        matches = Match.query.filter(
+            Match.mode == mode,
+            Match.status == "finished",
+            or_(Match.host_id == user.id, Match.joiner_id == user.id),
+        ).all()
+        total_games = len(matches)
+        wins = 0
+        for match in matches:
+            if match.host_id == user.id and match.host_points > match.joiner_points:
+                wins += 1
+            elif match.joiner_id == user.id and match.joiner_points > match.host_points:
+                wins += 1
+        win_rate = (wins / total_games) if total_games else 0
+        return {
+            "total_win": wins,
+            "cups": user.cups,
+            "win_rate": win_rate,
+            "total_game_played": total_games,
+        }
+
+    return jsonify({"cpu": build_stats("cpu"), "online": build_stats("online")})
+
+
+@app.put("/users/cups")
+def add_user_cups():
+    payload = parse_json(["firebase_code"])
+    user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
+    if not user:
+        abort(404, description="User not found")
+    cups_to_add = secrets.randbelow(4) + 27
+    user.cups = (user.cups or 0) + cups_to_add
+    db.session.commit()
+    return jsonify({"firebase_code": user.firebase_code, "added": cups_to_add, "cups": user.cups}), 200
+
+# --------------------------------------------------
+# Leaderboards
+# --------------------------------------------------
+
+@app.get("/leaderboard/global")
+def global_leaderboard():
+    users = User.query.order_by(User.cups.desc()).all()
+    return jsonify({"leaderboard": [u.to_dict() for u in users]})
+
+
+@app.post("/leaderboard/friends")
+def friends_leaderboard():
+    payload = parse_json(["firebase_code"])
+    user = get_user_by_firebase(payload["firebase_code"])
+    if not user:
+        abort(404, description="User not found")
+    friendships = Friendship.query.filter_by(user_id=user.id, status="accepted").all()
+    friend_ids = [f.friend_id for f in friendships]
+    if not friend_ids:
+        return jsonify({"leaderboard": []})
+    friends = User.query.filter(User.id.in_(friend_ids)).order_by(User.cups.desc()).all()
+    return jsonify({"leaderboard": [u.to_dict() for u in friends]})
+
 # --------------------------------------------------
 # Friendships
 # --------------------------------------------------
 
 @app.post("/friendships/request")
 def request_friendship():
-    payload = parse_json(["requester_firebase_code", "addressee_firebase_code"])
+    payload = parse_json(["requester_firebase_code", "addressee_friend_code"])
     requester = get_user_by_firebase(payload["requester_firebase_code"])
-    addressee = get_user_by_firebase(payload["addressee_firebase_code"])
+    addressee = User.query.filter_by(friend_code=payload["addressee_friend_code"]).first()
     if not requester or not addressee:
         abort(404, description="User not found")
     if requester.id == addressee.id:
@@ -307,17 +368,22 @@ def request_friendship():
     return jsonify(friendship.to_dict()), 201
 
 
-@app.get("/friendships/<firebase_code>")
-def list_friendships(firebase_code):
+@app.post("/friendships")
+def list_friendships():
+    payload = parse_json(["firebase_code", "status"])
+    firebase_code = payload["firebase_code"]
+    status = payload["status"]
+    if status not in {"pending", "accepted", "rejected"}:
+        abort(400, description="Invalid status")
     user = get_user_by_firebase(firebase_code)
     if not user:
-        return jsonify([])
+        return jsonify({"friends":[]})
     friendships = Friendship.query.filter_by(
-        user_id=user.id, status="accepted"
+        user_id=user.id, status=status
     ).all()
     friend_ids = [f.friend_id for f in friendships]
     if not friend_ids:
-        return jsonify([])
+        return jsonify({"friends":[]})
     friends = User.query.filter(User.id.in_(friend_ids)).all()
     return jsonify({"friends": [u.to_dict() for u in friends]})
 
@@ -361,60 +427,13 @@ def update_friendship_status():
 
 @app.post("/matches")
 def create_match():
-    payload = parse_json(["match_type", "mode", "status"])
+    payload = parse_json(
+        ["mode", "status", "host_id", "joiner_id", "host_points", "joiner_points"]
+    )
     match = Match(**payload)
     db.session.add(match)
     db.session.commit()
-    return jsonify(match.to_dict()), 201
-
-
-@app.get("/matches")
-def list_matches():
-    query = Match.query
-    for field in ["status", "match_type"]:
-        if field in request.args:
-            query = query.filter_by(**{field: request.args[field]})
-    return jsonify([m.to_dict() for m in query.all()])
-
-
-@app.patch("/matches/<int:match_id>")
-def update_match(match_id):
-    match = Match.query.get_or_404(match_id)
-    payload = parse_json()
-    for field in payload:
-        if hasattr(match, field):
-            setattr(match, field, payload[field])
-    db.session.commit()
-    return jsonify(match.to_dict())
-
-
-@app.delete("/matches/<int:match_id>")
-def delete_match(match_id):
-    match = Match.query.get_or_404(match_id)
-    db.session.delete(match)
-    db.session.commit()
-    return "", 204
-
-# --------------------------------------------------
-# Match players
-# --------------------------------------------------
-
-@app.post("/match-players")
-def create_match_player():
-    payload = parse_json(["match_id", "user_id"])
-    mp = MatchPlayer(**payload)
-    db.session.add(mp)
-    db.session.commit()
-    return jsonify(mp.to_dict()), 201
-
-
-@app.get("/match-players")
-def list_match_players():
-    query = MatchPlayer.query
-    for field in ["match_id", "user_id"]:
-        if field in request.args:
-            query = query.filter_by(**{field: int(request.args[field])})
-    return jsonify([p.to_dict() for p in query.all()])
+    return jsonify({"match": match.to_dict()}), 201
 
 # --------------------------------------------------
 # Match invites
@@ -422,37 +441,59 @@ def list_match_players():
 
 @app.post("/match-invites")
 def create_match_invite():
-    payload = parse_json(["room_id", "inviter_id", "invitee_id"])
-    invite = MatchInvite(**payload)
+    payload = parse_json(["inviter_firebase_code", "invitee_firebase_code", "room_id"])
+    inviter = get_user_by_firebase(payload["inviter_firebase_code"])
+    invitee = get_user_by_firebase(payload["invitee_firebase_code"])
+    if not inviter or not invitee:
+        abort(404, description="User not found")
+    if inviter.id == invitee.id:
+        abort(400, description="Cannot invite yourself")
+    invite = MatchInvite(
+        room_id=payload["room_id"],
+        inviter_id=inviter.id,
+        invitee_id=invitee.id,
+        status="pending",
+    )
     db.session.add(invite)
     db.session.commit()
     return jsonify(invite.to_dict()), 201
 
 
-@app.get("/match-invites")
+@app.post("/match-invites/list")
 def list_match_invites():
-    query = MatchInvite.query
-    for field in ["inviter_id", "invitee_id", "status"]:
-        if field in request.args:
-            query = query.filter_by(**{field: request.args[field]})
-    return jsonify([i.to_dict() for i in query.all()])
+    payload = parse_json(["firebase_code"])
+    user = get_user_by_firebase(payload["firebase_code"])
+    if not user:
+        return jsonify([])
+    invites = MatchInvite.query.filter_by(
+        invitee_id=user.id, status="pending"
+    ).all()
+    results = []
+    for invite in invites:
+        data = invite.to_dict()
+        inviter = User.query.get(invite.inviter_id)
+        if inviter:
+            inviter_data = inviter.to_dict()
+            data["nickname"] = inviter_data.get("nickname")
+            data["photo"] = inviter_data.get("photo")
+            data["google_photo_url"] = inviter_data.get("google_photo_url")
+        else:
+            data["nickname"] = None
+            data["photo"] = None
+            data["google_photo_url"] = None
+        results.append(data)
+    return jsonify({"invites": results})
 
 
-@app.patch("/match-invites/<int:invite_id>")
-def update_match_invite(invite_id):
-    invite = MatchInvite.query.get_or_404(invite_id)
-    payload = parse_json(["status"])
+@app.put("/match-invites")
+def update_match_invite():
+    payload = parse_json(["room_id", "status"])
+    invite = MatchInvite.query.filter_by(room_id=payload["room_id"]).first()
+    if not invite:
+        abort(404, description="Invite not found")
     invite.status = payload["status"]
     db.session.commit()
-    return jsonify(invite.to_dict())
-
-
-@app.delete("/match-invites/<int:invite_id>")
-def delete_match_invite(invite_id):
-    invite = MatchInvite.query.get_or_404(invite_id)
-    db.session.delete(invite)
-    db.session.commit()
-    return "", 204
+    return jsonify({"invite":invite.to_dict()})
 
 
 if __name__ == "__main__":

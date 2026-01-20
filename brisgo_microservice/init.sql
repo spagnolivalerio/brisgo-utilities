@@ -3,12 +3,13 @@ CREATE DATABASE brisgo;
 USE brisgo;
 
 CREATE TABLE USERS (
-  id            INTEGER PRIMARY KEY AUTO_INCREMENT,
-  nickname      VARCHAR(64) DEFAULT NULL,
-  firebase_code VARCHAR(50) DEFAULT NULL UNIQUE,
-  friend_code   VARCHAR(16) NOT NULL UNIQUE, 
-  photo         LONGBLOB DEFAULT NULL, 
-  cups          INTEGER NOT NULL DEFAULT 0
+  id               INTEGER PRIMARY KEY AUTO_INCREMENT,
+  nickname         VARCHAR(64) DEFAULT NULL,
+  firebase_code    VARCHAR(50) DEFAULT NULL UNIQUE,
+  friend_code      VARCHAR(16) NOT NULL UNIQUE, 
+  photo            LONGBLOB DEFAULT NULL, 
+  cups             INTEGER NOT NULL DEFAULT 0, 
+  google_photo_url VARCHAR(100) DEFAULT NULL
 );
 
 CREATE TABLE FRIENDSHIPS (
@@ -23,21 +24,15 @@ CREATE TABLE FRIENDSHIPS (
 );
 
 CREATE TABLE MATCHES (
-  id           INTEGER PRIMARY KEY AUTO_INCREMENT,
-  match_type   ENUM ('1v1', '2v2') NOT NULL,
-  mode         ENUM ('online', 'cpu') NOT NULL,      
-  status       ENUM  ('finished', 'aborted') NOT NULL,    
-  team1_points SMALLINT NOT NULL DEFAULT 0,
-  team2_points SMALLINT NOT NULL DEFAULT 0
-);
-
-CREATE TABLE MATCH_PLAYERS (
-  id          INTEGER PRIMARY KEY AUTO_INCREMENT,
-  match_id    INTEGER NOT NULL,
-  user_id     INTEGER NOT NULL,
-  team_index  ENUM ('team1', 'team2'),            
-  FOREIGN KEY (match_id) REFERENCES MATCHES(id),
-  FOREIGN KEY (user_id) REFERENCES USERS(id)
+  id            INTEGER PRIMARY KEY AUTO_INCREMENT,
+  mode          ENUM ('online', 'cpu') NOT NULL,      
+  status        ENUM  ('finished', 'aborted') NOT NULL, 
+  host_id       INTEGER  NOT NULL, 
+  joiner_id     INTEGER NOT NULL,   
+  host_points   SMALLINT NOT NULL DEFAULT 0,
+  joiner_points SMALLINT NOT NULL DEFAULT 0,
+  FOREIGN KEY (host_id) REFERENCES USERS(id),
+  FOREIGN KEY (joiner_id) REFERENCES USERS(id)
 );
 
 CREATE TABLE MATCH_INVITE (
@@ -48,7 +43,8 @@ CREATE TABLE MATCH_INVITE (
   status      ENUM ('pending', 'accept', 'rejected') DEFAULT 'pending',    
   CHECK       (inviter_id <> invitee_id),
   FOREIGN KEY (inviter_id) REFERENCES USERS(id),
-  FOREIGN KEY (invitee_id) REFERENCES USERS(id)
+  FOREIGN KEY (invitee_id) REFERENCES USERS(id),
+  UNIQUE (inviter_id, invitee_id, room_id)
 );
 
 -- Seed data
@@ -63,15 +59,9 @@ INSERT INTO FRIENDSHIPS (user_id, friend_id, status) VALUES
   (1, 3, 'pending'),
   (2, 4, 'rejected');
 
-INSERT INTO MATCHES (match_type, mode, status, team1_points, team2_points) VALUES
-  ('1v1', 'online', 'finished', 5, 3),
-  ('2v2', 'cpu',    'aborted',  1, 0);
-
-INSERT INTO MATCH_PLAYERS (match_id, user_id, team_index) VALUES
-  (1, 1, 'team1'),
-  (1, 2, 'team2'),
-  (2, 3, 'team1'),
-  (2, 4, 'team2');
+INSERT INTO MATCHES (match_type, mode, status, host_id, joiner_id, host_points, joiner_points) VALUES
+  ('1v1', 'online', 'finished', 1, 2, 5, 3),
+  ('2v2', 'cpu',    'aborted',  3, 4, 1, 0);
 
 INSERT INTO MATCH_INVITE (room_id, inviter_id, invitee_id, status) VALUES
   ('room_abc', 1, 2, 'accept'),
