@@ -95,8 +95,8 @@ class Match(db.Model):
     __tablename__ = "MATCHES"
 
     id = db.Column(db.Integer, primary_key=True)
+    room_id = db.Column(db.String(100), nullable=False)
     mode = db.Column(Enum("online", "cpu", name="match_mode"), nullable=False)
-    status = db.Column(Enum("finished", "aborted", name="match_status"), nullable=False)
     host_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     joiner_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     host_points = db.Column(db.SmallInteger, nullable=False, server_default="0")
@@ -105,8 +105,8 @@ class Match(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "room_id": self.room_id,
             "mode": self.mode,
-            "status": self.status,
             "host_id": self.host_id,
             "joiner_id": self.joiner_id,
             "host_points": self.host_points,
@@ -275,11 +275,11 @@ def get_user_stats():
     user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
     if not user:
         abort(404, description="User not found")
+    global_rank = User.query.filter(User.cups > user.cups).count() + 1
 
     def build_stats(mode):
         matches = Match.query.filter(
             Match.mode == mode,
-            Match.status == "finished",
             or_(Match.host_id == user.id, Match.joiner_id == user.id),
         ).all()
         total_games = len(matches)
@@ -292,12 +292,18 @@ def get_user_stats():
         win_rate = (wins / total_games) if total_games else 0
         return {
             "total_win": wins,
-            "cups": user.cups,
             "win_rate": win_rate,
             "total_game_played": total_games,
         }
 
-    return jsonify({"cpu": build_stats("cpu"), "online": build_stats("online")})
+    return jsonify(
+        {
+            "cpu": build_stats("cpu"),
+            "online": build_stats("online"),
+            "cups": user.cups,
+            "global_rank": global_rank,
+        }
+    )
 
 
 @app.put("/users/cups")
@@ -428,7 +434,7 @@ def update_friendship_status():
 @app.post("/matches")
 def create_match():
     payload = parse_json(
-        ["mode", "status", "host_id", "joiner_id", "host_points", "joiner_points"]
+        ["mode", "host_id", "joiner_id", "host_points", "joiner_points", "room_id"]
     )
     match = Match(**payload)
     db.session.add(match)

@@ -25,14 +25,15 @@ CREATE TABLE FRIENDSHIPS (
 
 CREATE TABLE MATCHES (
   id            INTEGER PRIMARY KEY AUTO_INCREMENT,
+  room_id       VARCHAR(100) NOT NULL UNIQUE, 
   mode          ENUM ('online', 'cpu') NOT NULL,      
-  status        ENUM  ('finished', 'aborted') NOT NULL, 
   host_id       INTEGER  NOT NULL, 
   joiner_id     INTEGER NOT NULL,   
   host_points   SMALLINT NOT NULL DEFAULT 0,
   joiner_points SMALLINT NOT NULL DEFAULT 0,
   FOREIGN KEY (host_id) REFERENCES USERS(id),
-  FOREIGN KEY (joiner_id) REFERENCES USERS(id)
+  FOREIGN KEY (joiner_id) REFERENCES USERS(id),
+  UNIQUE (room_id, host_id, joiner_id)
 );
 
 CREATE TABLE MATCH_INVITE (
