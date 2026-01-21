@@ -19,13 +19,13 @@ CREATE TABLE FRIENDSHIPS (
   status      ENUM ('pending', 'accepted', 'rejected') DEFAULT 'pending',
   CHECK       (user_id <> friend_id),
   UNIQUE      (user_id, friend_id),
-  FOREIGN KEY (user_id) REFERENCES USERS(id),
+  FOREIGN KEY (user_id) REFERENCES USERS(id ),
   FOREIGN KEY (friend_id) REFERENCES USERS(id)
 );
 
 CREATE TABLE MATCHES (
   id            INTEGER PRIMARY KEY AUTO_INCREMENT,
-  room_id       VARCHAR(100) NOT NULL UNIQUE, 
+  createdAt     BIGINT NOT NULL DEFAULT (UNIX_TIMESTAMP()),
   mode          ENUM ('online', 'cpu') NOT NULL,      
   host_id       INTEGER  NOT NULL, 
   joiner_id     INTEGER NOT NULL,   
@@ -33,7 +33,7 @@ CREATE TABLE MATCHES (
   joiner_points SMALLINT NOT NULL DEFAULT 0,
   FOREIGN KEY (host_id) REFERENCES USERS(id),
   FOREIGN KEY (joiner_id) REFERENCES USERS(id),
-  UNIQUE (room_id, host_id, joiner_id)
+  UNIQUE (createdAt, host_id, joiner_id)
 );
 
 CREATE TABLE MATCH_INVITE (
@@ -48,22 +48,18 @@ CREATE TABLE MATCH_INVITE (
   UNIQUE (inviter_id, invitee_id, room_id)
 );
 
--- Seed data
-INSERT INTO USERS (nickname, firebase_code, friend_code, photo, cups) VALUES
-  ('Vale',  'fb_001', 'FRIEND001', NULL, 12),
-  ('Marta', 'fb_002', 'FRIEND002', NULL, 8),
-  ('Luca',  'fb_003', 'FRIEND003', NULL, 3),
-  ('Giulia','fb_004', 'FRIEND004', NULL, 20);
+-- Seed data for stats
+INSERT INTO USERS (nickname, firebase_code, friend_code, photo, cups, google_photo_url) VALUES
+  ('Vale',  'fb_001', 'FRIEND001', NULL, 120, NULL),
+  ('Marta', 'fb_002', 'FRIEND002', NULL, 95,  NULL),
+  ('Luca',  'fb_003', 'FRIEND003', NULL, 60,  NULL),
+  ('Giulia','fb_004', 'FRIEND004', NULL, 30,  NULL);
 
-INSERT INTO FRIENDSHIPS (user_id, friend_id, status) VALUES
-  (1, 2, 'accepted'),
-  (1, 3, 'pending'),
-  (2, 4, 'rejected');
+INSERT INTO MATCHES (createdAt, mode, host_id, joiner_id, host_points, joiner_points) VALUES
+  (UNIX_TIMESTAMP() - 5000, 'online', 1, 2, 7, 5),
+  (UNIX_TIMESTAMP() - 4000, 'online', 2, 1, 6, 8),
+  (UNIX_TIMESTAMP() - 3000, 'cpu',    1, 3, 3, 6),
+  (UNIX_TIMESTAMP() - 2000, 'cpu',    3, 1, 2, 9),
+  (UNIX_TIMESTAMP() - 1000, 'online', 4, 1, 4, 4),
+  (UNIX_TIMESTAMP() - 500,  'online', 1, 4, 9, 2);
 
-INSERT INTO MATCHES (match_type, mode, status, host_id, joiner_id, host_points, joiner_points) VALUES
-  ('1v1', 'online', 'finished', 1, 2, 5, 3),
-  ('2v2', 'cpu',    'aborted',  3, 4, 1, 0);
-
-INSERT INTO MATCH_INVITE (room_id, inviter_id, invitee_id, status) VALUES
-  ('room_abc', 1, 2, 'accept'),
-  ('room_xyz', 3, 4, 'pending');

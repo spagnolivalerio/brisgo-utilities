@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Enum, CheckConstraint, UniqueConstraint, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.mysql import LONGBLOB
 
 # --------------------------------------------------
@@ -93,9 +94,12 @@ class Friendship(db.Model):
 
 class Match(db.Model):
     __tablename__ = "MATCHES"
+    __table_args__ = (
+        UniqueConstraint("host_id", "joiner_id", "createdAt", name="uq_matches_players_time"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    room_id = db.Column(db.String(100), nullable=False)
+    createdAt = db.Column(db.BigInteger, nullable=False, server_default=db.text("UNIX_TIMESTAMP()"))
     mode = db.Column(Enum("online", "cpu", name="match_mode"), nullable=False)
     host_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     joiner_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
@@ -105,7 +109,7 @@ class Match(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
-            "room_id": self.room_id,
+            "createdAt": self.createdAt,
             "mode": self.mode,
             "host_id": self.host_id,
             "joiner_id": self.joiner_id,
@@ -275,23 +279,37 @@ def get_user_stats():
     user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
     if not user:
         abort(404, description="User not found")
-    global_rank = User.query.filter(User.cups > user.cups).count() + 1
+    ordered_ids = [u.id for u in User.query.filter(User.id != 1).order_by(User.cups.desc(), User.id.asc()).all()]
+    global_rank = ordered_ids.index(user.id) + 1
 
     def build_stats(mode):
         matches = Match.query.filter(
             Match.mode == mode,
             or_(Match.host_id == user.id, Match.joiner_id == user.id),
-        ).all()
+        ).order_by(Match.createdAt.desc()).all()
         total_games = len(matches)
         wins = 0
+        win_streak = 0
         for match in matches:
             if match.host_id == user.id and match.host_points > match.joiner_points:
                 wins += 1
             elif match.joiner_id == user.id and match.joiner_points > match.host_points:
                 wins += 1
+        if matches:
+            for match in matches:
+                is_win = False
+                if match.host_id == user.id and match.host_points > match.joiner_points:
+                    is_win = True
+                elif match.joiner_id == user.id and match.joiner_points > match.host_points:
+                    is_win = True
+                if is_win:
+                    win_streak += 1
+                else:
+                    break
         win_rate = (wins / total_games) if total_games else 0
         return {
             "total_win": wins,
+            "win_streak": win_streak,
             "win_rate": win_rate,
             "total_game_played": total_games,
         }
@@ -306,16 +324,25 @@ def get_user_stats():
     )
 
 
-@app.put("/users/cups")
-def add_user_cups():
-    payload = parse_json(["firebase_code"])
+@app.post("/users/hitthesuit")
+def hit_the_suit():
+    payload = parse_json(["firebase_code", "score"])
     user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
     if not user:
         abort(404, description="User not found")
-    cups_to_add = secrets.randbelow(4) + 27
+    try:
+        score = int(payload["score"])
+    except (TypeError, ValueError):
+        abort(400, description="Invalid score")
+    max_cups = 10
+    cups_to_add = round((score / 11) * max_cups)
+    if cups_to_add < 0:
+        cups_to_add = 0
+    if cups_to_add > max_cups:
+        cups_to_add = max_cups
     user.cups = (user.cups or 0) + cups_to_add
     db.session.commit()
-    return jsonify({"firebase_code": user.firebase_code, "added": cups_to_add, "cups": user.cups}), 200
+    return jsonify({"cups": cups_to_add}), 200
 
 # --------------------------------------------------
 # Leaderboards
@@ -323,7 +350,7 @@ def add_user_cups():
 
 @app.get("/leaderboard/global")
 def global_leaderboard():
-    users = User.query.order_by(User.cups.desc()).all()
+    users = User.query.filter(User.id != 1).order_by(User.cups.desc(), User.id.asc()).all()
     return jsonify({"leaderboard": [u.to_dict() for u in users]})
 
 
@@ -434,12 +461,58 @@ def update_friendship_status():
 @app.post("/matches")
 def create_match():
     payload = parse_json(
-        ["mode", "host_id", "joiner_id", "host_points", "joiner_points", "room_id"]
+        ["mode", "host_firebase_code", "joiner_firebase_code", "host_points", "joiner_points", "createdAt"]
     )
-    match = Match(**payload)
+    if payload["mode"] == "cpu":
+        host = User.query.filter_by(id = 1).first()
+    else: 
+        host = User.query.filter_by(firebase_code=payload["host_firebase_code"]).first()
+    joiner = User.query.filter_by(firebase_code=payload["joiner_firebase_code"]).first()
+    if not host or not joiner:
+        abort(404, description="User not found")
+    host_id = host.id
+    joiner_id = joiner.id
+    existing = Match.query.filter_by(
+        host_id=host_id,
+        joiner_id=joiner_id,
+        createdAt=payload["createdAt"],
+    ).first()
+    if existing:
+        return jsonify({"match": existing.to_dict(), "added": False}), 200
+    match = Match(
+        mode = payload["mode"], 
+        host_id = host_id, 
+        joiner_id = joiner_id, 
+        host_points = payload["host_points"], 
+        joiner_points = payload["joiner_points"], 
+        createdAt = payload["createdAt"]
+    )
     db.session.add(match)
-    db.session.commit()
-    return jsonify({"match": match.to_dict()}), 201
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        existing = Match.query.filter_by(
+            host_id=host_id,
+            joiner_id=joiner_id,
+            createdAt=payload["createdAt"],
+        ).first()
+        if existing:
+            return jsonify({"match": existing.to_dict(), "added": False}), 200
+        raise
+
+    winner_id = None
+    if match.host_points > match.joiner_points:
+        winner_id = match.host_id
+    elif match.joiner_points > match.host_points:
+        winner_id = match.joiner_id
+    if winner_id is not None and payload["mode"] != "cpu":
+        winner = User.query.get(winner_id)
+        if winner:
+            cups_to_add = secrets.randbelow(7) + 27
+            winner.cups = (winner.cups or 0) + cups_to_add
+            db.session.commit()
+    return jsonify({"match": match.to_dict(), "added": True}), 201
 
 # --------------------------------------------------
 # Match invites
