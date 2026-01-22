@@ -16,7 +16,7 @@ CREATE TABLE FRIENDSHIPS (
   id          INTEGER PRIMARY KEY AUTO_INCREMENT,
   user_id     INTEGER NOT NULL,
   friend_id   INTEGER NOT NULL,
-  status      ENUM ('pending', 'accepted', 'rejected') DEFAULT 'pending',
+  status      ENUM ('pending', 'waiting', 'accepted', 'rejected') DEFAULT 'pending',
   CHECK       (user_id <> friend_id),
   UNIQUE      (user_id, friend_id),
   FOREIGN KEY (user_id) REFERENCES USERS(id ),

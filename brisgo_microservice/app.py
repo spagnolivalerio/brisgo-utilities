@@ -78,7 +78,7 @@ class Friendship(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     friend_id = db.Column(db.Integer, db.ForeignKey("USERS.id"), nullable=False)
     status = db.Column(
-        Enum("pending", "accepted", "rejected", name="friendship_status"),
+        Enum("pending", "accepted", "rejected", "waiting", name="friendship_status"),
         nullable=False,
         server_default="pending",
     )
@@ -344,6 +344,29 @@ def hit_the_suit():
     db.session.commit()
     return jsonify({"cups": cups_to_add}), 200
 
+
+@app.post("/users/memory")
+def memory():
+    payload = parse_json(["firebase_code", "moves"])
+    user = User.query.filter_by(firebase_code=payload["firebase_code"]).first()
+    if not user:
+        abort(404, description="User not found")
+    try:
+        moves = int(payload["moves"])
+    except (TypeError, ValueError):
+        abort(400, description="Invalid moves")
+    if moves < 10 or moves > 25:
+        abort(400, description="Invalid moves")
+    max_cups = 10
+    cups_to_add = round(0.6 * (moves  - max_cups) + 1)
+    if cups_to_add < 0:
+        cups_to_add = 0
+    if cups_to_add > max_cups:
+        cups_to_add = max_cups
+    user.cups = (user.cups or 0) + cups_to_add
+    db.session.commit()
+    return jsonify({"cups": cups_to_add}), 200
+
 # --------------------------------------------------
 # Leaderboards
 # --------------------------------------------------
@@ -362,10 +385,14 @@ def friends_leaderboard():
         abort(404, description="User not found")
     friendships = Friendship.query.filter_by(user_id=user.id, status="accepted").all()
     friend_ids = [f.friend_id for f in friendships]
-    if not friend_ids:
-        return jsonify({"leaderboard": []})
-    friends = User.query.filter(User.id.in_(friend_ids)).order_by(User.cups.desc()).all()
-    return jsonify({"leaderboard": [u.to_dict() for u in friends]})
+    leaderboard_ids = set(friend_ids)
+    leaderboard_ids.add(user.id)
+    leaderboard = (
+        User.query.filter(User.id.in_(leaderboard_ids))
+        .order_by(User.cups.desc(), User.id.asc())
+        .all()
+    )
+    return jsonify({"leaderboard": [u.to_dict() for u in leaderboard]})
 
 # --------------------------------------------------
 # Friendships
@@ -393,7 +420,7 @@ def request_friendship():
     reverse = Friendship(
         user_id=addressee.id,
         friend_id=requester.id,
-        status="pending",
+        status="waiting",
     )
     db.session.add(friendship)
     db.session.add(reverse)
@@ -406,7 +433,7 @@ def list_friendships():
     payload = parse_json(["firebase_code", "status"])
     firebase_code = payload["firebase_code"]
     status = payload["status"]
-    if status not in {"pending", "accepted", "rejected"}:
+    if status not in {"pending", "accepted", "rejected", "waiting"}:
         abort(400, description="Invalid status")
     user = get_user_by_firebase(firebase_code)
     if not user:
@@ -436,7 +463,7 @@ def update_friendship_status():
     if not friendship:
         return jsonify({}), 200
     new_status = payload["status"]
-    if new_status not in {"pending", "accepted", "rejected"}:
+    if new_status not in {"pending", "accepted", "rejected", "waiting"}:
         abort(400, description="Invalid status")
     friendship.status = new_status
     reverse = Friendship.query.filter_by(
