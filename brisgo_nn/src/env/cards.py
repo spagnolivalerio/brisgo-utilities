@@ -20,9 +20,23 @@ CARD_POINTS = {
     "seven": 0,
 }
 
+CARD_RANKS = {
+    "ace": 9,
+    "three": 8,
+    "king": 7,
+    "knight": 6,
+    "jack": 5,
+    "seven": 4,
+    "six": 3,
+    "five": 2,
+    "four": 1,
+    "two": 0,
+}
+
 class Card:
 
     def __init__(self, name: str, suit: str):
+
         assert name in CARD_NAMES
         assert suit in SUITS
 
@@ -32,6 +46,7 @@ class Card:
         self.name_id = CARD_NAMES.index(name)
 
     def __repr__(self):
+        
         return f"{self.name.capitalize()} of {self.suit.capitalize()}"
 
 class Deck:
@@ -49,31 +64,19 @@ class Deck:
     def draw(self) -> Card:
         assert len(self.cards) > 0, "Deck is empty"
         return self.cards.pop(0)
-
+    
+    # Put a card on the back of the deck (used for the briscola)
     def put_back(self, card: Card):
-        # Put a card on the back of the deck (used for the briscola)
         self.cards.append(card)
 
     def __len__(self):
         return len(self.cards)
 
-BRISCOLA_RANK = {
-    "ace": 9,
-    "three": 8,
-    "king": 7,
-    "knight": 6,
-    "jack": 5,
-    "seven": 4,
-    "six": 3,
-    "five": 2,
-    "four": 1,
-    "two": 0,
-}
-
+# Comparation of the card values (used to solve the trick)
 def compare_cards(first_card: Card, second_card: Card, briscola_suit: str) -> int:
 
     if first_card.suit == second_card.suit:
-        return 0 if BRISCOLA_RANK[first_card.name] > BRISCOLA_RANK[second_card.name] else 1
+        return 0 if CARD_RANKS[first_card.name] > CARD_RANKS[second_card.name] else 1
 
     if first_card.suit == briscola_suit:
         return 0

@@ -1,6 +1,6 @@
 from typing import List
 
-from env.cards import Card, BRISCOLA_RANK, compare_cards
+from env.cards import Card, CARD_RANKS, compare_cards
 from .opponent import Opponent
 
 
@@ -51,18 +51,18 @@ class RuleBasedOpponentV2(Opponent):
         return compare_cards(table_card, card, briscola_suit) == 1
 
     def _win_cost(self, card: Card) -> tuple:
-        return (card.points, BRISCOLA_RANK[card.name])
+        return (card.points, CARD_RANKS[card.name])
 
     def _briscola_spend_cost(self, card: Card) -> tuple:
-        return (BRISCOLA_RANK[card.name], card.points)
+        return (CARD_RANKS[card.name], card.points)
 
     def _discard_cost(self, card: Card, briscola_suit: str) -> tuple:
         is_briscola = 1 if card.suit == briscola_suit else 0
-        return (card.points, is_briscola, BRISCOLA_RANK[card.name])
+        return (card.points, is_briscola, CARD_RANKS[card.name])
 
     def _lead_cost(self, card: Card, briscola_suit: str) -> tuple:
         is_briscola = 1 if card.suit == briscola_suit else 0
-        return (is_briscola, card.points, BRISCOLA_RANK[card.name])
+        return (is_briscola, card.points, CARD_RANKS[card.name])
 
     def _should_use_briscola(self, points_on_table: int, card: Card, hand_size: int) -> bool:
         threshold = 5

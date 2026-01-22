@@ -26,7 +26,8 @@ class BriscolaEnv(gym.Env):
             shape=(26,),
             dtype=np.float32
         )
-        self.leader = ""  # Who starts the trick
+        # Who starts the trick
+        self.leader = ""  
         self.action_space = spaces.Discrete(3)
 
         self.opponent = opponent if opponent is not None else RandomOpponent()
@@ -42,11 +43,13 @@ class BriscolaEnv(gym.Env):
         self.opponent_points = 0
         self.step_count = 0
     
+    # Choosing of the opponent
     def change_opponent(self, opponent):
 
         self.opponent = opponent if opponent is not None else RandomOpponent()
-        
-    def reset(self, seed=None, options=None):
+    
+    # Override of reset function
+    def reset(self, seed=None):
         super().reset(seed=seed)
 
         self.deck = Deck()
@@ -61,6 +64,7 @@ class BriscolaEnv(gym.Env):
         self.agent_hand = [self.deck.draw() for _ in range(3)]
         self.opponent_hand = [self.deck.draw() for _ in range(3)]
 
+        # Initialize the match
         self.agent_points = 0
         self.opponent_points = 0
         self.step_count = 0
@@ -79,7 +83,8 @@ class BriscolaEnv(gym.Env):
             self.table_card = self.opponent_hand.pop(opp_idx)
 
         return self._get_state(), {}
- 
+    
+    # Override of step function (performs the action)
     def step(self, action: int):
         reward = 0.0
         terminated = False
@@ -88,15 +93,19 @@ class BriscolaEnv(gym.Env):
         if action >= len(self.agent_hand):
             return self._get_state(), -10.0, False, False, {}
 
+        # Action choosen by the network
         agent_card = self.agent_hand.pop(action)
 
         # Trick solving
         if self.table_card is not None:
+
             # Opponent opened, agent responds
             first_card = self.table_card
             second_card = agent_card
             first_player = "opponent"
+
         else:
+
             # Agent opens, opponent responds
             first_card = agent_card
             opp_idx = self.opponent.play(
@@ -152,7 +161,7 @@ class BriscolaEnv(gym.Env):
                 reward -= 100.0
             return self._get_state(), reward, terminated, truncated, {}
 
-        # Opponent opens next hand (ONLY if he has cards)
+        # Opponent opens next hand
         if self.leader == "opponent" and len(self.opponent_hand) > 0:
             opp_idx = self.opponent.play(
                 self.opponent_hand,
@@ -163,23 +172,19 @@ class BriscolaEnv(gym.Env):
 
         return self._get_state(), reward, terminated, truncated, {}
 
+    # Obtain the state normalizing each values from 0 to 1
     def _get_state(self):
+        
         state = []
-
-        # --- Normalized step ---
         state.append(self.step_count / 20.0)
-
-        # --- Normalized points ---
         state.append(self.agent_points / 120.0)
 
-        # --- Agent hand (3 cards max) ---
         for i in range(3):
             if i < len(self.agent_hand):
                 state.extend(self._encode_card(self.agent_hand[i]))
             else:
                 state.extend([0.0] * 6)
 
-        # --- Table card ---
         if self.table_card is not None:
             state.extend(self._encode_card(self.table_card))
         else:
@@ -188,17 +193,20 @@ class BriscolaEnv(gym.Env):
         assert len(state) == 26, f"State length is {len(state)}, expected 26"
 
         return np.array(state, dtype=np.float32)
-
+    
+    # One hot enconding for the suit and rank encoding of the card
     def _encode_card(self, card: Card):
         name_norm = card.name_id / 9.0
         is_briscola = 1.0 if card.suit == self.briscola_suit else 0.0
         suit_oh = self._encode_suit(card.suit)
         return [name_norm, is_briscola] + suit_oh
 
+    # One hot encoding
     def _encode_suit(self, suit: str):
         suits = ["batons", "cups", "coins", "swords"]
         return [1.0 if suit == s else 0.0 for s in suits]
     
+    # Render mode for local playing to perform test
     def render(self):
         print(f"Briscola: {self.briscola_suit}")
         print(f"Agent hand: {self.agent_hand}")

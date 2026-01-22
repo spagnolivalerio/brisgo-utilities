@@ -12,8 +12,6 @@ from agents.rule_based_agent_v1 import RuleBasedOpponent
 from agents.rule_based_agent_v2 import RuleBasedOpponentV2
 from agents.rule_based_agent_v3 import RuleBasedOpponentV3
 
-AGENT = "rule_based"
-
 class DQNTrainer:
     def __init__(
         self,
