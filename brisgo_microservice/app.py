@@ -411,7 +411,20 @@ def request_friendship():
         user_id=requester.id, friend_id=addressee.id
     ).first()
     if existing:
-        return jsonify(existing.to_dict()), 200
+
+        if existing.status != "rejected": 
+            return jsonify(existing.to_dict()), 200
+        else:
+            reverse = Friendship.query.filter_by(user_id=addressee.id, friend_id=requester.id).first() 
+            if not reverse: 
+                abort(404, description="Reverse friendship not found")
+            elif reverse.status != "rejected":
+                abort(400, description="Reverse friendship's status not coherent")
+            existing.status = "waiting"
+            reverse.status = "pending"
+            db.session.commit()
+            return jsonify(existing.to_dict()), 200
+        
     friendship = Friendship(
         user_id=requester.id,
         friend_id=addressee.id,
