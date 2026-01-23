@@ -63,3 +63,13 @@ Leaderboards are dynamically updated through backend services.
 
 Cloud-based services are used for data storage, matchmaking, and real-time communication (**GCP services and Firebase**).  
 User position is localized using GPS, with reverse geocoding performed through the **Nominatim public API**.
+
+---
+
+## Repositories
+Links to our repositories:
+- app repository https://github.com/matteoventali/BrisGo   
+- neural network and microservices repository https://github.com/spagnolivalerio/brisgo-utilities
+
+## Authors
+Matteo Ventali (1985026), Valerio Spagnoli (1973484), Serena Ragaglia (1941007)
