@@ -5,6 +5,8 @@ from model import DQN, ReplayBuffer
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import argparse
+
 
 from env.env import BriscolaEnv
 from agents.opponent import RandomOpponent
@@ -23,7 +25,8 @@ class DQNTrainer:
         eps_start=1.0,
         eps_end=0.05,
         eps_decay=0.999,
-        device="cpu"
+        device="cpu", 
+        num_nodes=None,
     ):
         self.env = env
         self.device = device
@@ -31,7 +34,11 @@ class DQNTrainer:
         self.state_dim = env.observation_space.shape[0]
         self.num_actions = env.action_space.n
 
-        self.q_net = DQN(self.state_dim, self.num_actions).to(device)
+        if num_nodes: 
+            self.q_net = DQN(self.state_dim, self.num_actions, num_nodes=num_nodes).to(device)
+        else: 
+            self.q_net = DQN(self.state_dim, self.num_actions).to(device)
+            
         self.optimizer = optim.RMSprop(self.q_net.parameters(), lr=lr)
         self.loss_fn = nn.SmoothL1Loss()
 
@@ -124,17 +131,31 @@ def get_opponent(name: str):
         return RuleBasedOpponentV3()
     return RandomOpponent()
 
-def make_env(opponent_name: str = None):
+def make_env(opponent_name: str = None, aug: bool = False):
     if opponent_name:
         opponent = get_opponent(opponent_name)
-        return BriscolaEnv(opponent=opponent)
-    return BriscolaEnv()
+        return BriscolaEnv(opponent=opponent, aug=aug)
+    return BriscolaEnv(aug=aug)
 
-if __name__ == "__main__":
 
-    env = make_env()
-    trainer = DQNTrainer(env)
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--aug", default="False")
+    args = parser.parse_args()
+
+    aug = args.aug
+    aug = True if aug == "True" else False
+    env = make_env(aug=aug)
+
+    print(f"State dim: {env.observation_space.shape[0]}")
+
+    trainer = DQNTrainer(env, num_nodes=128 if aug else None)
 
     trainer.train(episodes=500000)
 
-    torch.save(trainer.q_net.state_dict(), "dqn_briscola_opponents_pool.pth")
+    torch.save(trainer.q_net.state_dict(), "aug_hard.pth")
+
+if __name__ == "__main__":
+
+    main()

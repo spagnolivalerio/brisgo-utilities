@@ -17,13 +17,15 @@ class BriscolaEnv(gym.Env):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, opponent=None):
+    def __init__(self, opponent=None, aug=False):
         super().__init__()
 
+        self.aug = aug
+        state_size = 26 + (40 if self.aug else 0)
         self.observation_space = spaces.Box(
             low=0.0,
             high=1.0,
-            shape=(26,),
+            shape=(state_size,),
             dtype=np.float32
         )
         # Who starts the trick
@@ -42,6 +44,7 @@ class BriscolaEnv(gym.Env):
         self.agent_points = 0
         self.opponent_points = 0
         self.step_count = 0
+        self.deck_seen = None
     
     # Choosing of the opponent
     def change_opponent(self, opponent):
@@ -68,6 +71,10 @@ class BriscolaEnv(gym.Env):
         self.agent_points = 0
         self.opponent_points = 0
         self.step_count = 0
+        self._init_deck_seen()
+        self._mark_seen(briscola_card)
+        for card in self.agent_hand:
+            self._mark_seen(card)
 
         # Decide who starts the first hand
         self.leader = "agent" if random.random() < 0.5 else "opponent"
@@ -81,6 +88,7 @@ class BriscolaEnv(gym.Env):
                 briscola_suit=self.briscola_suit
             )
             self.table_card = self.opponent_hand.pop(opp_idx)
+            self._mark_seen(self.table_card)
 
         return self._get_state(), {}
     
@@ -95,6 +103,7 @@ class BriscolaEnv(gym.Env):
 
         # Action choosen by the network
         agent_card = self.agent_hand.pop(action)
+        self._mark_seen(agent_card)
 
         # Trick solving
         if self.table_card is not None:
@@ -115,6 +124,7 @@ class BriscolaEnv(gym.Env):
             )
             second_card = self.opponent_hand.pop(opp_idx)
             first_player = "agent"
+            self._mark_seen(second_card)
 
         # Decide winner
         winner_first = (compare_cards(first_card, second_card, self.briscola_suit) == 0)
@@ -141,10 +151,12 @@ class BriscolaEnv(gym.Env):
         if len(self.deck) > 0:
             if winner == "agent":
                 self.agent_hand.append(self.deck.draw())
+                self._mark_seen(self.agent_hand[-1])
                 self.opponent_hand.append(self.deck.draw())
             else:
                 self.opponent_hand.append(self.deck.draw())
                 self.agent_hand.append(self.deck.draw())
+                self._mark_seen(self.agent_hand[-1])
 
         self.step_count += 1
 
@@ -169,6 +181,7 @@ class BriscolaEnv(gym.Env):
                 briscola_suit=self.briscola_suit
             )
             self.table_card = self.opponent_hand.pop(opp_idx)
+            self._mark_seen(self.table_card)
 
         return self._get_state(), reward, terminated, truncated, {}
 
@@ -190,9 +203,35 @@ class BriscolaEnv(gym.Env):
         else:
             state.extend([0.0] * 6)
 
-        assert len(state) == 26, f"State length is {len(state)}, expected 26"
+        if self.aug:
+            state.extend(self.deck_seen.flatten().tolist())
+
+        expected_len = 26 + (40 if self.aug else 0)
+        assert len(state) == expected_len, (
+            f"State length is {len(state)}, expected {expected_len}"
+        )
 
         return np.array(state, dtype=np.float32)
+
+    def _init_deck_seen(self):
+        if not self.aug:
+            return
+        self.deck_seen = np.zeros((10, 4), dtype=np.float32)
+
+    def _mark_seen(self, card: Card):
+        if not self.aug or card is None:
+            return
+        rank_idx = self._rank_index(card.name)
+        suit_idx = self._suit_index(card.suit)
+        self.deck_seen[rank_idx, suit_idx] = 1.0
+
+    def _rank_index(self, name: str) -> int:
+        ranks = ["ace", "two", "three", "four", "five", "six", "seven", "jack", "knight", "king"]
+        return ranks.index(name)
+
+    def _suit_index(self, suit: str) -> int:
+        suits = ["coins", "batons", "swords", "cups"]
+        return suits.index(suit)
     
     # One hot enconding for the suit and rank encoding of the card
     def _encode_card(self, card: Card):

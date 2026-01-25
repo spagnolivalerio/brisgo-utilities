@@ -3,14 +3,14 @@ from collections import deque
 import random
 
 class DQN(nn.Module):
-    def __init__(self, state_dim: int, num_actions: int):
+    def __init__(self, state_dim: int, num_actions: int, num_nodes: int = 64):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim, 64),
+            nn.Linear(state_dim, num_nodes),
             nn.ReLU(),
-            nn.Linear(64, 64),
+            nn.Linear(num_nodes, num_nodes),
             nn.ReLU(),
-            nn.Linear(64, num_actions)
+            nn.Linear(num_nodes, num_actions)
         )
 
     def forward(self, x):
@@ -28,5 +28,6 @@ class ReplayBuffer:
 
     def __len__(self):
         return len(self.buffer)
+    
 
     
