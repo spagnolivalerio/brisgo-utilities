@@ -1,4 +1,5 @@
 name                         wr random        wr rule based
-random_agent_100k            90%              39%
-rule_based_500k_v2           81%              65%
-dqn_briscola_opponents_pool  70%              v1-66% v2-65% v3-62%
+dqn_random_agent            90%              39%
+dqn_rule_based_v2           81%              65%
+dqn_opponents_pool          70%              v1-66% v2-65% v3-62%
+dqn_augmented               66.2 %             v1-62.3% v2-62.8% v3-66.8% 
