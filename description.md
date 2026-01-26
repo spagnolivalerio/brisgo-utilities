@@ -13,6 +13,7 @@ There are **three different difficulty levels**:
 - **Medium** – Trained on single-agent rule-based strategy  
 - **Hard** – Trained on multi-agent rule-based strategy  
 
+The performance of the DQN can be found in the report inside the brisgo-utilities repository (see below).
 ---
 
 ## Multiplayer Mode

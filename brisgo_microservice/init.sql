@@ -48,18 +48,3 @@ CREATE TABLE MATCH_INVITE (
   UNIQUE (inviter_id, invitee_id, room_id)
 );
 
--- Seed data for stats
-INSERT INTO USERS (nickname, firebase_code, friend_code, photo, cups, google_photo_url) VALUES
-  ('Vale',  'fb_001', 'FRIEND001', NULL, 120, NULL),
-  ('Marta', 'fb_002', 'FRIEND002', NULL, 95,  NULL),
-  ('Luca',  'fb_003', 'FRIEND003', NULL, 60,  NULL),
-  ('Giulia','fb_004', 'FRIEND004', NULL, 30,  NULL);
-
-INSERT INTO MATCHES (createdAt, mode, host_id, joiner_id, host_points, joiner_points) VALUES
-  (UNIX_TIMESTAMP() - 5000, 'online', 1, 2, 7, 5),
-  (UNIX_TIMESTAMP() - 4000, 'online', 2, 1, 6, 8),
-  (UNIX_TIMESTAMP() - 3000, 'cpu',    1, 3, 3, 6),
-  (UNIX_TIMESTAMP() - 2000, 'cpu',    3, 1, 2, 9),
-  (UNIX_TIMESTAMP() - 1000, 'online', 4, 1, 4, 4),
-  (UNIX_TIMESTAMP() - 500,  'online', 1, 4, 9, 2);
-
