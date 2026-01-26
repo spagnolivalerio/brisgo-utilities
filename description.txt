@@ -6,6 +6,7 @@ There are 3 different difficulty levels:
     - Easy (Random Agent), 
     - Medium (trained on single agent-rule-based)
     - Hard (trained on multi-agent rule-based)
+The performance of the neural network can be found in the report inside the brisgo-utilities repository (see below).
 
 - Multiplayer Mode
 The app supports real-time online matches between players.
